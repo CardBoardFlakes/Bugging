@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bug Types Are Underpowered</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+  <div class="noise"></div>
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <canvas id="heroCanvas"></canvas>
+    <div class="hero__content">
+      <div class="hero__eyebrow mono">POKÉMON GO · TYPE ANALYSIS</div>
+      <h1 class="hero__title">Bug Types<br/><em>Are Getting</em><br/>Crushed.</h1>
+      <p class="hero__sub">A scroll-driven data visualisation that compares bug types to other types.</p>
+      <div class="scroll-cue">
+        <div class="scroll-cue__bug">🐛</div>
+        <div class="scroll-cue__arrow">↓</div>
+        <span class="mono scroll-cue__text">Scroll down to begin</span>
+      </div>
+    </div>
+    <div class="hero__badge">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText" class="mono">Loading data…</span>
+    </div>
+  </section>
+
+  <!-- CHAPTER 1 — TYPE AVG STATS BAR CHART -->
+  <section class="chapter" id="chapter1">
+    <div class="chapter__sticky">
+      <div class="chapter__num mono">01</div>
+      <h2 class="chapter__title">Average<br/>Stats<br/>by Type</h2>
+      <p class="chapter__body">Every bar represents a Pokémon type's average combined stat total. Bug is the shortest bar on the chart — showing how it is overall weaker than the others.</p>
+      <p class="chapter__body">The buttons at the top highlight legendaries of each type in a greyed out colour. The right side numbers show the average of non legendaries / all legendaries. Notice how bug types have no legendaries? (As of Gen 9)</p>
+      <div class="chapter__note" id="ch1Note"></div>
+    </div>
+    <div class="chapter__visual">
+      <div class="bar-chart-wrap">
+        <div class="bar-chart-mode-toggle" id="barModeToggle">
+          <button class="bar-mode-btn active" data-mode="simple">All Pokémon</button>
+          <button class="bar-mode-btn" data-mode="legendary">Legendary</button>
+        </div>
+        <div class="bar-chart-horiz" id="typeBarChart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAPTER 2 — SCATTER -->
+  <section class="chapter chapter--alt" id="chapter2">
+    <div class="chapter__sticky">
+      <div class="chapter__num mono">02</div>
+      <h2 class="chapter__title">Base Stat </br> Scatterplot</h2>
+      <p class="chapter__body">Each point represents a Pokémon. <span class="highlight-bug">Bubble size displays stamina, bigger means tankier</span>. Bug types tend to have higher stamina and defence, not ideal for DPS.</p>
+      <p class="chapter__body">Use type filter buttons at the top to filter through different Pokémon types.</p>
+      <div class="chapter__note" id="ch2Note"></div>
+    </div>
+    <div class="chapter__visual">
+      <div class="scatter-controls" id="scatterControls"></div>
+      <canvas id="scatterCanvas"></canvas>
+    </div>
+  </section>
+
+  <!-- CHAPTER 3 — RADIAL TYPE COUNT -->
+  <section class="chapter" id="chapter3">
+    <div class="chapter__sticky">
+      <div class="chapter__num mono">03</div>
+      <h2 class="chapter__title">Offensive Resistance Breakdown</h2>
+      <p class="chapter__body"> A pie chart that visualises the effectiveness of every type. </br><span class="highlight-bug">&nbsp;&nbsp;&nbsp;- Green Segments</span> are Super Effective </br><span style="color:#e84040" style="padding-left: 20px; display: inline-block;">&nbsp;&nbsp;&nbsp;- Red Segments</span> are not very effective</br>- <span style="color:#bdb9b9">&nbsp;- Grey Segments</span> are neutral</br> Notice how bug types have </br> <span class="highlight-bug">3 Super Effective</span> VS <span style="color:#e84040">7 not very effective.</span> Click on any segment on the chart to explore the effectiveness of other types</p>
+      <div class="chapter__note" id="ch3Note"></div>
+    </div>
+    <div class="chapter__visual chapter__visual--pie" id="pieVisual">
+      <div class="pie-canvas-wrap">
+        <canvas id="pieParticleCanvas"></canvas>
+        <canvas id="radialCanvas"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAPTER 5 — DPS STACKED BAR CHART -->
+  <section class="chapter chapter--alt" id="chapter5">
+    <div class="chapter__sticky">
+      <div class="chapter__num mono">04</div>
+      <h2 class="chapter__title">DPS Comparison</h2>
+      <p class="chapter__body">Bug types counter Grass, Dark, and Psychic. But in 2/3 matchups, Bug is out-DPS'd by stronger, more popular alternatives. Each bar shows the top 10 attackers — <span class="highlight-bug">Bug types glows green</span>, use the Mega and STAB (Same Type Attack Bonus) filters to look through the top DPS options.</p>
+      <p class="chapter__body"> The light grey bar represents the average DPS for the type, while the dark grey part represents the DPS of the specific Pokémon.</p>
+
+      <div class="chapter__note" id="ch5Note">Loading...</div>
+    </div>
+    <div class="chapter__visual chapter__visual--dps">
+      <div class="dps-controls">
+        <div class="dps-tabs" id="dpsTabs">
+          <button class="dps-tab active" data-target="grass">vs Grass</button>
+          <button class="dps-tab" data-target="dark">vs Dark</button>
+          <button class="dps-tab" data-target="psychic">vs Psychic</button>
+        </div>
+        <div class="dps-filters" id="dpsFilters">
+          <button class="dps-filter active" data-filter="mega">Include Megas</button>
+          <button class="dps-filter" data-filter="stab">STAB moves only</button>
+        </div>
+      </div>
+      <div class="dps-charts">
+        <div class="dps-chart active" id="dpsChart-grass"></div>
+        <div class="dps-chart" id="dpsChart-dark"></div>
+        <div class="dps-chart" id="dpsChart-psychic"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAPTER 4 (VERDICT) — moved after DPS -->
+  <section class="chapter chapter--verdict" id="chapter4">
+    <div class="verdict__content">
+      <div class="verdict__label mono">THE VERDICT</div>
+      <h2 class="verdict__title">Bug is<br/><em>Severely Underpowered</em></h2>
+      <div class="verdict__stats" id="verdictStats">
+        <div class="vstat">
+          <div class="vstat__val" id="vstat1">—</div>
+          <div class="vstat__label">Visual 1 · Average stats<br/><span class="mono">Bug rank out of all types</span></div>
+        </div>
+        <div class="vstat">
+          <div class="vstat__val" id="vstat2">—</div>
+          <div class="vstat__label">Visual 2 · Attack vs Defense<br/><span class="mono">Difference between bug and average.</span></div>
+        </div>
+        <div class="vstat">
+          <div class="vstat__val" id="vstat3">—</div>
+          <div class="vstat__label">Visual 3 · Matchups<br/><span class="mono">Bug super-effective vs resisted totals</span></div>
+        </div>
+        <div class="vstat">
+          <div class="vstat__val" id="vstat4">—</div>
+          <div class="vstat__label">Visual 4 · DPS leaderboard<br/><span class="mono" id="vstat4Breakdown">Bug entries in top 10 lists</span></div>
+        </div>
+      </div>
+      <div class="verdict__closing">
+        <div class="mono verdict__closing-label">Closure</div>
+        <p id="closingParagraph" class="verdict__closing-text">
+          While Bug types are strong against certain other types, they are overall severely underpowered. This is especially apparent through their DPS, average stats, and matchups.
+          Furthermore the top bug types such as Mega Heracross, Mega Pinsir, and Mega Scizor are mega pokemon which you can only have one at a time, this is furthered by the unavalability of mega energy as it
+          takes a while for them to return. This trend of exclusivity is also reflected by the other top DPS options like Shadow Regigigas requiring hidden power bug and Volcarona requiring 400 candy to evolve and being
+          an rare egg exclusive. However despite these flaws bug types are still very good against dark types and their above average stamina makes them great in PvP. Pokemon Go developers should ensure that 
+          all traits are created and maintained equally to provide balance and diversity within the meta.
+        </p>
+      </div>
+      <p class="verdict__footnote mono" id="verdictFootnote">Based on PoGoAPI and DialgaDex's datasets of Pokémon.</p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span class="mono">POKÉMON TYPE ANALYSIS</span>
+    <span class="mono">By Blake for Enterprise Compuging Assesment Half Yearly</span>
+  </footer>
+
+  <!-- data.js is optional: run convert-data.py to generate it from local CSVs -->
+  <!-- If present, it embeds your data directly and skips all network fetches -->
+  <script src="data.js" onerror="console.log('No local data.js — will fetch from Google Sheets')"></script>
+  <script src="script.js"></script>
+</body>
+</html>
