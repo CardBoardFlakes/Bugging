@@ -45,9 +45,9 @@ let scatterBugHighlightOn = true;
 
 // Render state — tracks what data is ready and what has been built
 const ready   = { pokemon: false, dps: false };
-const built   = { ch1: false, ch2: false, ch3: false, ch5: false };
+const built   = { ch1: false, ch2: false, ch3: false, ch5: false, ch6: false };
 // Track which chapters the scroll observer has seen
-const seen    = { ch1: false, ch2: false, ch3: false, ch4: false, ch5: false };
+const seen    = { ch1: false, ch2: false, ch3: false, ch4: false, ch5: false, ch6: false };
 
 // Called whenever data arrives OR scroll fires — renders if both are ready
 function tryRender(ch) {
@@ -67,6 +67,10 @@ function tryRender(ch) {
   if (ch === 'ch5' && ready.dps && ready.pokemon && seen.ch5 && !built.ch5) {
     built.ch5 = true;
     buildDpsChart();
+  }
+  if (ch === 'ch6' && seen.ch6 && !built.ch6) {
+    built.ch6 = true;
+    buildRaidsChart();
   }
 }
 
@@ -1811,6 +1815,260 @@ function animateDpsRows(container) {
   });
 }
 
+// ── RAIDS LINE CHART ─────────────────────────────────────
+const RAIDS_DATA = {
+  years: [2017,2018,2019,2020,2021,2022,2023,2024,2025],
+  types: {
+    Bug:      [0,0,0,1,4,10,9,18,21],
+    Dark:     [0,0,1,23,33,21,18,20,27],
+    Dragon:   [0,21,22,73,55,33,36,59,64],
+    Electric: [7,2,2,16,53,22,20,27,21],
+    Fairy:    [0,0,0,0,8,20,21,22,34],
+    Fighting: [0,0,13,15,25,20,16,22,49],
+    Fire:     [10,9,4,89,46,21,23,23,34],
+    Flying:   [17,18,8,70,70,34,42,43,40],
+    Ghost:    [0,3,3,24,16,10,10,22,16],
+    Grass:    [0,0,3,29,34,17,13,14,20],
+    Ground:   [2,2,6,5,16,9,14,19,16],
+    Ice:      [3,4,1,32,30,15,14,11,21],
+    Normal:   [0,0,9,37,29,10,12,6,15],
+    Poison:   [0,0,0,33,29,9,8,6,8],
+    Psychic:  [15,64,77,17,40,39,36,42,61],
+    Rock:     [0,4,5,5,7,16,8,13,26],
+    Steel:    [0,3,12,19,19,30,22,35,62],
+    Water:    [4,6,8,24,27,21,20,23,33],
+  }
+};
+
+// Which types are toggled on (default: Bug + Average)
+let raidsActiveTypes = new Set(['Bug', '__avg__']);
+let raidsAnimFrame = null;
+
+function getRaidsAvg() {
+  const years = RAIDS_DATA.years;
+  const types = Object.values(RAIDS_DATA.types);
+  return years.map((_, yi) => {
+    const sum = types.reduce((s, arr) => s + arr[yi], 0);
+    return sum / types.length;
+  });
+}
+
+function buildRaidsChart() {
+  const canvas = document.getElementById('raidsCanvas');
+  if (!canvas) return;
+
+  // Build filter buttons
+  const filtersEl = document.getElementById('raidsTypeFilters');
+  if (filtersEl && !filtersEl.dataset.built) {
+    filtersEl.dataset.built = '1';
+
+    // Average button first
+    const avgBtn = document.createElement('button');
+    avgBtn.className = 'raids-btn active';
+    avgBtn.dataset.type = '__avg__';
+    avgBtn.textContent = 'Average';
+    avgBtn.style.setProperty('--btn-color', 'rgba(226,237,226,0.55)');
+    avgBtn.addEventListener('click', () => toggleRaidsType('__avg__', avgBtn));
+    filtersEl.appendChild(avgBtn);
+
+    // Type buttons
+    Object.keys(RAIDS_DATA.types).forEach(type => {
+      const color = TYPE_COLORS[type.toLowerCase()] || TYPE_COLORS.default;
+      const btn = document.createElement('button');
+      btn.className = 'raids-btn' + (type === 'Bug' ? ' active is-bug' : '');
+      btn.dataset.type = type;
+      btn.textContent = type;
+      btn.style.setProperty('--btn-color', color);
+      btn.addEventListener('click', () => toggleRaidsType(type, btn));
+      filtersEl.appendChild(btn);
+    });
+  }
+
+  drawRaidsChart(canvas, 0);
+}
+
+function toggleRaidsType(type, btn) {
+  if (raidsActiveTypes.has(type)) {
+    // Keep at least 1 active
+    if (raidsActiveTypes.size <= 1) return;
+    raidsActiveTypes.delete(type);
+    btn.classList.remove('active');
+  } else {
+    raidsActiveTypes.add(type);
+    btn.classList.add('active');
+  }
+  const canvas = document.getElementById('raidsCanvas');
+  if (canvas) drawRaidsChart(canvas, 0);
+}
+
+function drawRaidsChart(canvas, animProgress) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = rect.height;
+  const PAD = { top: 28, right: 24, bottom: 48, left: 50 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+
+  const years = RAIDS_DATA.years;
+  const n     = years.length;
+
+  // Gather all active series
+  const series = [];
+  raidsActiveTypes.forEach(type => {
+    if (type === '__avg__') {
+      series.push({ label: 'Average', values: getRaidsAvg(), color: 'rgba(226,237,226,0.55)', dashed: true, isBug: false, isAvg: true });
+    } else if (RAIDS_DATA.types[type]) {
+      const color = TYPE_COLORS[type.toLowerCase()] || TYPE_COLORS.default;
+      series.push({ label: type, values: RAIDS_DATA.types[type], color, dashed: false, isBug: type === 'Bug', isAvg: false });
+    }
+  });
+
+  // Y scale — max of all active series
+  const allVals = series.flatMap(s => s.values);
+  const maxVal  = Math.max(...allVals, 10);
+  const yTick   = maxVal <= 30 ? 5 : maxVal <= 60 ? 10 : maxVal <= 100 ? 20 : 25;
+
+  const xPos = i => PAD.left + (i / (n - 1)) * chartW;
+  const yPos = v => PAD.top + chartH - (v / maxVal) * chartH;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(226,237,226,0.05)';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= maxVal; t += yTick) {
+    const y = yPos(t);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,237,226,0.3)';
+    ctx.font = `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillText(t, PAD.left - 6, y + 3);
+  }
+
+  // Vertical year lines
+  years.forEach((yr, i) => {
+    const x = xPos(i);
+    ctx.strokeStyle = 'rgba(226,237,226,0.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, PAD.top + chartH); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,237,226,0.35)';
+    ctx.font = `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(yr, x, PAD.top + chartH + 18);
+  });
+
+  // Draw lines (non-bug, non-avg first, then avg, then bug on top)
+  const order = [
+    ...series.filter(s => !s.isBug && !s.isAvg),
+    ...series.filter(s => s.isAvg),
+    ...series.filter(s => s.isBug),
+  ];
+
+  order.forEach(s => {
+    const pts = animProgress < 1
+      ? Math.max(2, Math.round(animProgress * (n - 1)) + 1)
+      : n;
+
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i < pts; i++) {
+      const x = xPos(i);
+      const y = yPos(s.values[i]);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth   = s.isBug ? 2.5 : s.isAvg ? 1.5 : 1.5;
+    ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.7 : 0.45;
+    if (s.dashed) ctx.setLineDash([5, 4]);
+    else          ctx.setLineDash([]);
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
+    // Glow for bug
+    if (s.isBug) {
+      ctx.shadowColor = 'rgba(120,200,80,0.5)';
+      ctx.shadowBlur  = 8;
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Dots
+    for (let i = 0; i < pts; i++) {
+      const x = xPos(i);
+      const y = yPos(s.values[i]);
+      ctx.save();
+      ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.65 : 0.4;
+      ctx.beginPath();
+      ctx.arc(x, y, s.isBug ? 4 : s.isAvg ? 3 : 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      if (s.isBug) { ctx.shadowColor = 'rgba(120,200,80,0.7)'; ctx.shadowBlur = 10; }
+      ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  // Labels at right edge (last point)
+  const labeledSeries = order.filter(s => {
+    const lastY = yPos(s.values[n-1]);
+    return lastY > PAD.top && lastY < PAD.top + chartH;
+  });
+
+  // Sort by last value desc to de-collide
+  labeledSeries.sort((a, b) => b.values[n-1] - a.values[n-1]);
+  const labelPositions = [];
+  labeledSeries.forEach(s => {
+    let targetY = yPos(s.values[n-1]);
+    // Nudge if too close to previous
+    for (const py of labelPositions) {
+      if (Math.abs(targetY - py) < 13) targetY = py + 13;
+    }
+    labelPositions.push(targetY);
+    ctx.save();
+    ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.7 : 0.4;
+    ctx.fillStyle   = s.color;
+    ctx.font = s.isBug ? `bold 10px IBM Plex Mono, monospace` : `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText(s.label, W - PAD.right + 4, targetY + 3);
+    ctx.restore();
+  });
+}
+
+function animateRaidsChart() {
+  const canvas = document.getElementById('raidsCanvas');
+  if (!canvas) return;
+  const duration = 1200;
+  const start = performance.now();
+  function frame(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    // Ease out cubic
+    const ease = 1 - Math.pow(1 - progress, 3);
+    drawRaidsChart(canvas, ease);
+    if (progress < 1) raidsAnimFrame = requestAnimationFrame(frame);
+  }
+  raidsAnimFrame = requestAnimationFrame(frame);
+}
+
+// Override buildRaidsChart to use animation on first build
+(function() {
+  const _orig = buildRaidsChart;
+  window.buildRaidsChart = function() {
+    _orig();
+    animateRaidsChart();
+    // Re-draw on resize
+    window.addEventListener('resize', () => {
+      const canvas = document.getElementById('raidsCanvas');
+      if (canvas) drawRaidsChart(canvas, 1);
+    }, { passive: true });
+  };
+})();
+
 // ── SCROLL OBSERVER ──────────────────────────────────────
 function setupObserver() {
   // threshold:0 fires as soon as 1px enters the viewport
@@ -1820,14 +2078,14 @@ function setupObserver() {
       entry.target.classList.add('is-visible');
       const id = entry.target.id;
       const ch = { chapter1:'ch1', chapter2:'ch2', chapter3:'ch3',
-                   chapter4:'ch4', chapter5:'ch5' }[id];
+                   chapter4:'ch4', chapter5:'ch5', chapter6:'ch6' }[id];
       if (!ch) return;
       seen[ch] = true;
       tryRender(ch);
     });
   }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
 
-  ['chapter1','chapter2','chapter3','chapter4','chapter5'].forEach(id => {
+  ['chapter1','chapter2','chapter3','chapter4','chapter5','chapter6'].forEach(id => {
     const el = document.getElementById(id);
     if (el) io.observe(el);
   });
