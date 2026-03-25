@@ -307,13 +307,26 @@ function parseDpsCSV(csv) {
 
   const typeRow = splitLine(lines[0]);
   console.log('DPS row0:', typeRow.slice(0, 20));
-  console.log('DPS row1:', splitLine(lines[1]).slice(0, 20));
-  console.log('DPS row2:', splitLine(lines[2]).slice(0, 20));
 
-  // Find column groups by locating type names in row 0
+  // Typo correction map for common misspellings in the DPS sheet header
+  const TYPO_MAP = {
+    'figthing': 'fighting',
+    'figting':  'fighting',
+    'fightng':  'fighting',
+    'poisin':   'poison',
+    'psycic':   'psychic',
+    'psycihc':  'psychic',
+    'electrc':  'electric',
+  };
+
+  // Find column groups by locating type names in row 0 (with typo correction)
   const groups = [];
   typeRow.forEach((cell, i) => {
-    const t = cell.trim().toLowerCase();
+    let t = cell.trim().toLowerCase();
+    if (TYPO_MAP[t]) {
+      console.log(`DPS header typo corrected: "${cell}" → "${TYPO_MAP[t]}"`);
+      t = TYPO_MAP[t];
+    }
     if (DPS_TYPE_ORDER.includes(t)) groups.push({ type: t, start: i });
   });
 
@@ -804,7 +817,10 @@ function buildScatter() {
 
   const allS=stamCol?allPokemon.map(p=>parseFloat(p[stamCol])||0).filter(v=>v>0):[];
   const maxS=allS.length?Math.max(...allS):1, minS=allS.length?Math.min(...allS):0;
-  const toR=(s,bug)=>{ const t=maxS>minS?(s-minS)/(maxS-minS):0.5; return (bug?4:2)+t*(bug?8:5); };
+  const toR=(s,bug)=>{ 
+    const t = maxS > minS ? (s - minS) / (maxS - minS) : 0.5; 
+    return 2 + t * 10; // All bubbles now scale from 2px to 12px based purely on stamina
+  };
 
   const vals=allPokemon.map(p=>({
     x:parseFloat(p[xCol])||0, y:parseFloat(p[yCol])||0,
