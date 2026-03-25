@@ -64,9 +64,6 @@ function tryRender(ch) {
     initPieParticles();
     buildRadial();
   }
-  if (ch === 'ch4' && seen.ch4) {
-    document.getElementById('chapter4')?.classList.add('animate');
-  }
   if (ch === 'ch5' && ready.dps && ready.pokemon && seen.ch5 && !built.ch5) {
     built.ch5 = true;
     buildDpsChart();
@@ -796,11 +793,12 @@ function animateBars() {
 function buildScatter() {
   const canvas = document.getElementById('scatterCanvas');
   if (!canvas || !allPokemon.length) return;
+  const isMobile = window.innerWidth < 768;
   // Size canvas: walk up DOM for real dimensions, fall back to viewport
   let sizeEl = canvas.parentElement;
   while (sizeEl && sizeEl.clientWidth < 10) sizeEl = sizeEl.parentElement;
-  const rawW = sizeEl ? sizeEl.clientWidth  * 0.92 : 0;
-  const rawH = sizeEl ? sizeEl.clientHeight * 0.85 : 0;
+  const rawW = sizeEl ? sizeEl.clientWidth  * (isMobile ? 0.98 : 0.92) : 0;
+  const rawH = sizeEl ? sizeEl.clientHeight * (isMobile ? 0.70 : 0.85) : 0;
   const W = rawW > 10 ? rawW : window.innerWidth  * 0.45;
   const H = rawH > 10 ? rawH : window.innerHeight * 0.65;
 
@@ -813,7 +811,7 @@ function buildScatter() {
   canvas.width=W*dpr; canvas.height=H*dpr;
   canvas.style.width=W+'px'; canvas.style.height=H+'px';
   const ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
-  const PAD={t:24,r:24,b:56,l:64};
+  const PAD = isMobile ? {t:10,r:10,b:40,l:45} : {t:24,r:24,b:56,l:64};
 
   const allS=stamCol?allPokemon.map(p=>parseFloat(p[stamCol])||0).filter(v=>v>0):[];
   const maxS=allS.length?Math.max(...allS):1, minS=allS.length?Math.min(...allS):0;
@@ -858,12 +856,12 @@ function buildScatter() {
       ctx.strokeStyle='rgba(232,240,232,0.06)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(PAD.l,gy); ctx.lineTo(W-PAD.r,gy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(gx,PAD.t); ctx.lineTo(gx,H-PAD.b); ctx.stroke();
-      ctx.fillStyle='rgba(232,240,232,0.3)'; ctx.font='10px IBM Plex Mono';
+      ctx.fillStyle='rgba(232,240,232,0.3)'; ctx.font='12px IBM Plex Mono';
       ctx.textAlign='right'; ctx.fillText(Math.round(yv),PAD.l-6,gy+4);
-      ctx.textAlign='center'; ctx.fillText(Math.round(xv),gx,H-PAD.b+16);
+      ctx.textAlign='center'; ctx.fillText(Math.round(xv),gx,H-PAD.b+18);
     }
-    ctx.fillStyle='rgba(232,240,232,0.45)'; ctx.font='11px IBM Plex Mono';
-    ctx.textAlign='center'; ctx.fillText('BASE ATTACK',W/2,H-6);
+    ctx.fillStyle='rgba(232,240,232,0.45)'; ctx.font='14px IBM Plex Mono';
+    ctx.textAlign='center'; ctx.fillText('BASE ATTACK',W/2,H-8);
     ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2); ctx.fillText('BASE DEFENSE',0,0); ctx.restore();
     ctx.strokeStyle='rgba(232,240,232,0.15)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(PAD.l,PAD.t); ctx.lineTo(PAD.l,H-PAD.b); ctx.stroke();
@@ -1305,7 +1303,7 @@ function buildRadial() {
         }
       });
 
-      const labelSize = Math.max(10, Math.round(size * 0.023));
+      const labelSize = Math.max(12, Math.round(size * 0.032));
       const labelPad = Math.max(8, size * 0.03);
       labelRows.forEach(r => {
         const { s, isHov, onRight, anchorX, anchorY, bendX, bendY, labelX, finalY } = r;
@@ -1390,9 +1388,9 @@ function buildRadial() {
         ctx.stroke();
 
         ctx.fillStyle = '#e84040';
-        ctx.font      = `${Math.round(size * 0.019)}px IBM Plex Mono`;
+        ctx.font      = `${Math.round(size * 0.025)}px IBM Plex Mono`;
         ctx.fillText(`${activeAttackType.toUpperCase()} NOT VERY EFFECTIVE`, cx, cy + size * 0.025);
-        ctx.font      = `bold ${Math.round(size * 0.038)}px DM Serif Display`;
+        ctx.font      = `bold ${Math.round(size * 0.05)}px DM Serif Display`;
         ctx.fillText(`${resistCount}`, cx, cy + size * 0.08);
       }
     }
@@ -1412,7 +1410,7 @@ function buildRadial() {
         ctx.arc(lx - size * 0.04, lY, 5, 0, Math.PI * 2);
         ctx.fillStyle = item.color; ctx.fill();
         ctx.fillStyle = 'rgba(226,237,226,0.4)';
-        ctx.font      = `${Math.round(size * 0.018)}px IBM Plex Mono`;
+        ctx.font      = `${Math.round(size * 0.028)}px IBM Plex Mono`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(item.label, lx - size * 0.04 + 9, lY);
@@ -1819,6 +1817,7 @@ function setupObserver() {
   const io = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       if (!entry.isIntersecting) return;
+      entry.target.classList.add('is-visible');
       const id = entry.target.id;
       const ch = { chapter1:'ch1', chapter2:'ch2', chapter3:'ch3',
                    chapter4:'ch4', chapter5:'ch5' }[id];
@@ -1826,7 +1825,7 @@ function setupObserver() {
       seen[ch] = true;
       tryRender(ch);
     });
-  }, { threshold: 0, rootMargin: '0px 0px -10% 0px' });
+  }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
 
   ['chapter1','chapter2','chapter3','chapter4','chapter5'].forEach(id => {
     const el = document.getElementById(id);
@@ -1834,11 +1833,28 @@ function setupObserver() {
   });
 }
 
+// ── SCROLL SNAPPING LOGIC ────────────────────────────────
+function setupScrollSnapping() {
+  const html = document.documentElement;
+  let isScrolling;
+
+  // When user scrolls, disable snapping temporarily
+  window.addEventListener('scroll', () => {
+    html.classList.add('is-scrolling');
+    window.clearTimeout(isScrolling);
+    // Re-enable snapping when scrolling stops (strong lock for slow scrolling)
+    isScrolling = setTimeout(() => {
+      html.classList.remove('is-scrolling');
+    }, 120); // 120ms debounce
+  }, { passive: true });
+}
+
 // ── INIT ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', ()=>{
   initHero();
   initBgParticles();
   setupObserver();
+  setupScrollSnapping();
   loadData();
   loadDpsData();
 });
