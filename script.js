@@ -1169,4 +1169,1048 @@ const TYPE_WEAKNESSES = {
   water:    ['electric','grass'],
   grass:    ['bug','fire','flying','ice','poison'],
   electric: ['ground'],
-  ice:      ['fire'... (40 KB left)
+  ice:      ['fire','fighting','rock','steel'],
+  fighting: ['fairy','flying','psychic'],
+  poison:   ['ground','psychic'],
+  ground:   ['grass','ice','water'],
+  flying:   ['electric','ice','rock'],
+  psychic:  ['bug','dark','ghost'],
+  bug:      ['fire','flying','rock'],
+  rock:     ['fighting','grass','ground','steel','water'],
+  ghost:    ['dark','ghost'],
+  dragon:   ['dragon','fairy','ice'],
+  dark:     ['bug','fairy','fighting'],
+  steel:    ['fire','fighting','ground'],
+  fairy:    ['poison','steel'],
+};
+
+// Offensive matchup table (attacking type -> defender types)
+const TYPE_ATTACK_MATCHUPS = {
+  normal:   { super: [], resist: ['rock','steel'], immune: ['ghost'] },
+  fire:     { super: ['grass','ice','bug','steel'], resist: ['fire','water','rock','dragon'], immune: [] },
+  water:    { super: ['fire','ground','rock'], resist: ['water','grass','dragon'], immune: [] },
+  electric: { super: ['water','flying'], resist: ['electric','grass','dragon'], immune: ['ground'] },
+  grass:    { super: ['water','ground','rock'], resist: ['fire','grass','poison','flying','bug','dragon','steel'], immune: [] },
+  ice:      { super: ['grass','ground','flying','dragon'], resist: ['fire','water','ice','steel'], immune: [] },
+  fighting: { super: ['normal','ice','rock','dark','steel'], resist: ['poison','flying','psychic','bug','fairy'], immune: ['ghost'] },
+  poison:   { super: ['grass','fairy'], resist: ['poison','ground','rock','ghost'], immune: ['steel'] },
+  ground:   { super: ['fire','electric','poison','rock','steel'], resist: ['grass','bug'], immune: ['flying'] },
+  flying:   { super: ['grass','fighting','bug'], resist: ['electric','rock','steel'], immune: [] },
+  psychic:  { super: ['fighting','poison'], resist: ['psychic','steel'], immune: ['dark'] },
+  bug:      { super: ['grass','psychic','dark'], resist: ['fire','fighting','poison','flying','ghost','steel','fairy'], immune: [] },
+  rock:     { super: ['fire','ice','flying','bug'], resist: ['fighting','ground','steel'], immune: [] },
+  ghost:    { super: ['psychic','ghost'], resist: ['dark'], immune: ['normal'] },
+  dragon:   { super: ['dragon'], resist: ['steel'], immune: ['fairy'] },
+  dark:     { super: ['psychic','ghost'], resist: ['fighting','dark','fairy'], immune: [] },
+  steel:    { super: ['ice','rock','fairy'], resist: ['fire','water','electric','steel'], immune: [] },
+  fairy:    { super: ['fighting','dragon','dark'], resist: ['fire','poison','steel'], immune: [] },
+};
+const TYPE_EMOJI = {
+  normal: '⚪', fire: '🔥', water: '💧', electric: '⚡', grass: '🌿', ice: '❄️',
+  fighting: '🥊', poison: '☠️', ground: '⛰️', flying: '🕊️', psychic: '🔮',
+  bug: '🐛', rock: '🪨', ghost: '👻', dragon: '🐉', dark: '🌑', steel: '⚙️', fairy: '✨',
+};
+
+function buildRadial() {
+  const canvas = document.getElementById('radialCanvas');
+  if (!canvas || !Object.keys(typeStats).length) return;
+
+  // Size canvas
+  let rSizeEl = canvas.parentElement;
+  while (rSizeEl && rSizeEl.clientWidth < 10) rSizeEl = rSizeEl.parentElement;
+  const rW = rSizeEl ? rSizeEl.clientWidth  * 0.88 : window.innerWidth  * 0.42;
+  const rH = rSizeEl ? rSizeEl.clientHeight * 0.88 : window.innerHeight * 0.62;
+  const W = Math.max(rW > 10 ? rW : window.innerWidth  * 0.42, 300);
+  const H = Math.max(rH > 10 ? rH : window.innerHeight * 0.62, 300);
+  const size = Math.min(W, H);
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr; canvas.height = H * dpr;
+  canvas.style.width  = W + 'px'; canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = W / 2, cy = H / 2;
+  const outerR = size * 0.3;   // leave extra room for outside labels
+  const innerR = size * 0.19;
+
+  let activeAttackType = 'bug';
+
+  const type1Col3 = headers.includes(COLS.type1) ? COLS.type1 : 'type1';
+  const type2Col3 = headers.includes(COLS.type2) ? COLS.type2 : 'type2';
+
+  // All types present in dataset, sized by how many Pokémon carry that type
+  const ALL_TYPES = Object.keys(TYPE_COLORS).filter(t => t !== 'default');
+
+  const sliceData = ALL_TYPES.map(type => {
+    const count = allPokemon.filter(p => {
+      const t1 = (p[type1Col3] || '').toLowerCase().trim();
+      const t2 = (p[type2Col3] || '').toLowerCase().trim();
+      return t1 === type || t2 === type;
+    }).length;
+    return { type, count };
+  }).filter(d => d.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const total = sliceData.reduce((s, d) => s + d.count, 0);
+
+  function getMatchupSets(attackType) {
+    const m = TYPE_ATTACK_MATCHUPS[attackType] || { super: [], resist: [], immune: [] };
+    return {
+      super: new Set(m.super),
+      resist: new Set([...(m.resist || []), ...(m.immune || [])]),
+      immune: new Set(m.immune || []),
+    };
+  }
+
+  // Assign visual category to each defending type
+  function getCategory(defType) {
+    const matchup = getMatchupSets(activeAttackType);
+    if (matchup.super.has(defType))  return 'super';   // active type is super effective
+    if (matchup.resist.has(defType)) return 'resist';  // active type is resisted / immune
+    return 'neutral';                             // normal damage
+  }
+
+  // Colours per category
+  const CAT_COLORS = {
+    super:   BUG_COLOR,                    // bright green — Bug wins here
+    resist:  '#e84040',                    // red — Bug struggles here
+    neutral: 'rgba(226,237,226,0.35)',     // dim — normal matchup
+  };
+  const CAT_ALPHA = { super: 1, resist: 0.85, neutral: 0.35 };
+
+  // Build/update slices
+  let slices = [];
+  function rebuildSlices() {
+    slices = [];
+    let angle = -Math.PI / 2;
+    sliceData.forEach(d => {
+      const sweep = (d.count / total) * Math.PI * 2;
+      const cat = getCategory(d.type);
+      slices.push({
+        ...d, cat,
+        color:      CAT_COLORS[cat],
+        startAngle: angle,
+        endAngle:   angle + sweep,
+        midAngle:   angle + sweep / 2,
+      });
+      angle += sweep;
+    });
+  }
+  rebuildSlices();
+
+  let hovered  = null;
+  let animProg = 0;
+  let animDone = false;
+  let rotationOffset = 0;
+  let spinAnimStart = 0;
+  let spinFrom = 0;
+  let spinTo = 0;
+  const TYPE_SWITCH_SPIN_MS = 520;
+
+  function getSummaryCounts() {
+    const matchup = getMatchupSets(activeAttackType);
+    const superCount = sliceData.filter(d => matchup.super.has(d.type)).reduce((s,d)=>s+d.count,0);
+    const resistCount = sliceData.filter(d => matchup.resist.has(d.type)).reduce((s,d)=>s+d.count,0);
+    return { superCount, resistCount, matchup };
+  }
+
+  function drawPie(prog) {
+    ctx.clearRect(0, 0, W, H);
+
+    const labelRows = [];
+
+    slices.forEach((s, idx) => {
+      const sweepProg = Math.min(1, prog * slices.length - idx);
+      if (sweepProg <= 0) return;
+      const startA = s.startAngle + rotationOffset;
+      const endAFull = s.endAngle + rotationOffset;
+      const midA = s.midAngle + rotationOffset;
+      const sweep = (endAFull - startA) * sweepProg;
+      const isHov = hovered === s;
+      const r     = isHov ? outerR * 1.07 : outerR;
+
+      // Slice fill
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, startA, startA + sweep);
+      ctx.closePath();
+      ctx.fillStyle   = s.color;
+      ctx.globalAlpha = isHov ? 1 : CAT_ALPHA[s.cat];
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Glow ring on super/resist slices
+      if ((s.cat === 'super' || s.cat === 'resist') && sweepProg >= 0.98) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startA, startA + sweep);
+        ctx.closePath();
+        ctx.strokeStyle = s.cat === 'super' ? 'rgba(120,200,80,0.5)' : 'rgba(232,64,64,0.4)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+      }
+
+      // Hover outline
+      if (isHov) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startA, startA + sweep);
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(226,237,226,0.6)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+      }
+
+      // Labels: always outside with connector line for consistent readability
+      if (sweepProg >= 0.98) {
+        const onRight = Math.cos(midA) >= 0;
+        labelRows.push({
+          s,
+          isHov,
+          onRight,
+          anchorX: cx + Math.cos(midA) * (outerR * 1.03),
+          anchorY: cy + Math.sin(midA) * (outerR * 1.03),
+          bendX: cx + Math.cos(midA) * (outerR * 1.18),
+          bendY: cy + Math.sin(midA) * (outerR * 1.18),
+          targetY: cy + Math.sin(midA) * (outerR * 1.3),
+          labelX: cx + (onRight ? outerR * 1.48 : -outerR * 1.48),
+        });
+      }
+    });
+
+    if (labelRows.length) {
+      const minGap = Math.max(12, size * 0.04);
+      const yMin = cy - outerR * 1.35;
+      const yMax = cy + outerR * 1.35;
+      ['right', 'left'].forEach(side => {
+        const isRight = side === 'right';
+        const rows = labelRows
+          .filter(r => r.onRight === isRight)
+          .sort((a, b) => a.targetY - b.targetY);
+
+        rows.forEach((r, i) => {
+          let y = r.targetY;
+          if (i > 0) y = Math.max(y, rows[i - 1].finalY + minGap);
+          r.finalY = y;
+        });
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (rows[i].finalY > yMax) rows[i].finalY = yMax;
+          if (i < rows.length - 1) {
+            rows[i].finalY = Math.min(rows[i].finalY, rows[i + 1].finalY - minGap);
+          }
+          rows[i].finalY = Math.max(rows[i].finalY, yMin);
+        }
+      });
+
+      const labelSize = Math.max(12, Math.round(size * 0.032));
+      const labelPad = Math.max(8, size * 0.03);
+      labelRows.forEach(r => {
+        const { s, isHov, onRight, anchorX, anchorY, bendX, bendY, labelX, finalY } = r;
+        const lineColor = s.cat === 'neutral' ? 'rgba(226,237,226,0.45)' : s.color;
+        const lineAlpha = isHov ? 0.95 : (s.cat === 'neutral' ? 0.5 : 0.8);
+        const endX = onRight ? labelX - labelPad * 0.6 : labelX + labelPad * 0.6;
+
+        ctx.strokeStyle = lineColor;
+        ctx.globalAlpha = lineAlpha;
+        ctx.lineWidth = isHov ? 1.7 : 1.2;
+        ctx.beginPath();
+        ctx.moveTo(anchorX, anchorY);
+        ctx.lineTo(bendX, bendY);
+        ctx.lineTo(endX, finalY);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        ctx.font = `${isHov ? 'bold ' : ''}${labelSize}px IBM Plex Mono`;
+        ctx.textAlign = onRight ? 'left' : 'right';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = 'rgba(6,10,6,0.95)';
+        ctx.lineWidth = 3.5;
+        ctx.strokeText(s.type, labelX, finalY);
+        ctx.fillStyle = s.cat === 'neutral' ? 'rgba(226,237,226,0.92)' : s.color;
+        ctx.fillText(s.type, labelX, finalY);
+      });
+    }
+
+    // Donut hole
+    ctx.beginPath();
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    ctx.fillStyle = '#060a06';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(226,237,226,0.06)';
+    ctx.lineWidth   = 1; ctx.stroke();
+
+    // Legend inside donut
+    if (prog >= 0.95) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+      if (hovered) {
+        // Hovered type detail
+        const catLabel = { super: '✓ SUPER EFFECTIVE', resist: '✗ NOT VERY EFFECTIVE', neutral: '— NEUTRAL' };
+        const catCol   = { super: BUG_COLOR, resist: '#e84040', neutral: 'rgba(226,237,226,0.4)' };
+        ctx.fillStyle = catCol[hovered.cat];
+        ctx.font      = `${Math.round(size * 0.02)}px IBM Plex Mono`;
+        ctx.fillText(catLabel[hovered.cat], cx, cy - size * 0.11);
+
+        ctx.fillStyle = hovered.color;
+        ctx.font      = `bold ${Math.round(size * 0.05)}px DM Serif Display`;
+        ctx.fillText(hovered.type.toUpperCase(), cx, cy - size * 0.04);
+
+        ctx.fillStyle = 'rgba(226,237,226,0.7)';
+        ctx.font      = `${Math.round(size * 0.044)}px DM Serif Display`;
+        ctx.fillText(hovered.count, cx, cy + size * 0.04);
+
+        ctx.fillStyle = 'rgba(226,237,226,0.3)';
+        ctx.font      = `${Math.round(size * 0.019)}px IBM Plex Mono`;
+        ctx.fillText('pokémon carry this type', cx, cy + size * 0.095);
+      } else {
+        // Default summary
+        const { superCount, resistCount } = getSummaryCounts();
+        const selectedEmoji = TYPE_EMOJI[activeAttackType] || '✨';
+        ctx.fillStyle = 'rgba(226,237,226,0.88)';
+        ctx.font      = `${Math.round(size * 0.038)}px IBM Plex Mono`;
+        ctx.fillText(selectedEmoji, cx, cy - size * 0.162);
+
+        ctx.fillStyle = BUG_COLOR;
+        ctx.font      = `${Math.round(size * 0.019)}px IBM Plex Mono`;
+        ctx.fillText(`${activeAttackType.toUpperCase()} SUPER EFFECTIVE`, cx, cy - size * 0.12);
+        ctx.font      = `bold ${Math.round(size * 0.038)}px DM Serif Display`;
+        ctx.fillText(`${superCount}`, cx, cy - size * 0.065);
+
+        // Divider
+        ctx.strokeStyle = 'rgba(226,237,226,0.1)';
+        ctx.lineWidth   = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - innerR * 0.6, cy);
+        ctx.lineTo(cx + innerR * 0.6, cy);
+        ctx.stroke();
+
+        ctx.fillStyle = '#e84040';
+        ctx.font      = `${Math.round(size * 0.025)}px IBM Plex Mono`;
+        ctx.fillText(`${activeAttackType.toUpperCase()} NOT VERY EFFECTIVE`, cx, cy + size * 0.025);
+        ctx.font      = `bold ${Math.round(size * 0.05)}px DM Serif Display`;
+        ctx.fillText(`${resistCount}`, cx, cy + size * 0.08);
+      }
+    }
+
+    // Legend swatches (bottom of canvas)
+    if (prog >= 0.98) {
+      const lY  = H - size * 0.04;
+      const gap = size * 0.30;
+      const items = [
+        { label: 'Super effective', color: BUG_COLOR },
+        { label: 'Not very effective', color: '#e84040' },
+        { label: 'Neutral', color: 'rgba(226,237,226,0.35)' },
+      ];
+      items.forEach((item, i) => {
+        const lx = cx + (i - 1) * gap;
+        ctx.beginPath();
+        ctx.arc(lx - size * 0.04, lY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = item.color; ctx.fill();
+        ctx.fillStyle = 'rgba(226,237,226,0.4)';
+        ctx.font      = `${Math.round(size * 0.022)}px IBM Plex Mono`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.label, lx - size * 0.04 + 8, lY);
+      });
+    }
+  }
+
+  function anim() {
+    animProg = Math.min(1, animProg + 0.018);
+    drawPie(animProg);
+    if (animProg < 1) requestAnimationFrame(anim);
+    else animDone = true;
+  }
+  anim();
+
+  // Hover
+  function getSliceAt(mx, my) {
+    const dx = mx - cx, dy = my - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist < innerR || dist > outerR * 1.15) return null;
+    let a = Math.atan2(dy, dx);
+    if (a < -Math.PI / 2) a += Math.PI * 2;
+    a -= rotationOffset;
+    while (a < -Math.PI / 2) a += Math.PI * 2;
+    while (a > Math.PI * 1.5) a -= Math.PI * 2;
+    return slices.find(s => a >= s.startAngle && a <= s.endAngle) || null;
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top)  * (H / rect.height);
+    const hit = getSliceAt(mx, my);
+    if (hit !== hovered) {
+      hovered = hit;
+      canvas.style.cursor = hit ? 'pointer' : 'default';
+      if (animDone) drawPie(1);
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    hovered = null;
+    canvas.style.cursor = 'default';
+    if (animDone) drawPie(1);
+  });
+
+  canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top)  * (H / rect.height);
+    const hit = getSliceAt(mx, my);
+    if (!hit) return;
+    activeAttackType = hit.type;
+    hovered = hit;
+    rebuildSlices();
+    spinAnimStart = performance.now();
+    spinFrom = rotationOffset;
+    spinTo = rotationOffset + Math.PI * 2 * 1.15;
+    const spinTick = () => {
+      const t = Math.min(1, (performance.now() - spinAnimStart) / TYPE_SWITCH_SPIN_MS);
+      const ease = 1 - Math.pow(1 - t, 3);
+      rotationOffset = spinFrom + (spinTo - spinFrom) * ease;
+      drawPie(1);
+      if (t < 1) {
+        requestAnimationFrame(spinTick);
+      } else {
+        rotationOffset = rotationOffset % (Math.PI * 2);
+      }
+    };
+    spinTick();
+    updateNote();
+  });
+
+  // Note
+  const n3 = document.getElementById('ch3Note');
+  function updateNote() {
+    if (!n3) return;
+    const { superCount, resistCount, matchup } = getSummaryCounts();
+    const superList = [...matchup.super];
+    const resistList = [...matchup.resist];
+    const emoji = TYPE_EMOJI[activeAttackType] || '✨';
+    n3.innerHTML = `
+    ${emoji}<br>
+    · Super effective vs ${superList.length ? superList.join(', ') : 'none'} (${superCount} Pokémon)<br>
+    · Not very effective vs ${resistList.length ? resistList.join(', ') : 'none'} (${resistCount} Pokémon)
+      `;
+    const v3 = document.getElementById('vstat3');
+    if (v3) {
+      // Keep verdict card anchored to Bug's matchup pressure.
+      const bugMatchup = getMatchupSets('bug');
+      const bugSuperCount = sliceData.filter(d => bugMatchup.super.has(d.type)).reduce((s,d)=>s+d.count,0);
+      const bugResistCount = sliceData.filter(d => bugMatchup.resist.has(d.type)).reduce((s,d)=>s+d.count,0);
+      v3.textContent = `${bugSuperCount} / ${bugResistCount}`;
+    }
+  }
+  updateNote();
+}
+
+// ── CH5: DPS CHART ─────────────────────────
+// Filter state: true = SHOW that category
+const dpsFilters = { mega: true, stab: false }; // stab=false = show all; stab=true = STAB only
+
+// ── FORM TYPE OVERRIDES ─────────────────────────────────
+// Pokemon alternate forms that have DIFFERENT types from their base form.
+// The database only has base forms, so these must be hardcoded.
+// Key = normalised DPS name (lowercase, no prefix/suffix), Value = [type1, type2?]
+const FORM_TYPE_OVERRIDES = {
+  // Kyurem forms
+  'kyurem white':        ['dragon', 'ice'],
+  'kyurem black':        ['dragon', 'ice'],
+  'white kyurem':        ['dragon', 'ice'],
+  'black kyurem':        ['dragon', 'ice'],
+  // Necrozma forms
+  'necrozma dusk mane':  ['psychic', 'steel'],
+  'necrozma dawn wings': ['psychic', 'ghost'],
+  'dusk mane necrozma':  ['psychic', 'steel'],
+  'dawn wings necrozma': ['psychic', 'ghost'],
+  'ultra necrozma':      ['psychic', 'dragon'],
+  // Zacian forms
+  'zacian crowned':      ['fairy', 'steel'],
+  'zacian crowned sword':['fairy', 'steel'],
+  'zacian':              ['fairy'],
+  // Zamazenta forms
+  'zamazenta crowned':   ['fighting', 'steel'],
+  'zamazenta crowned shield': ['fighting', 'steel'],
+  'zamazenta':           ['fighting'],
+  // Giratina forms
+  'giratina origin':     ['ghost', 'dragon'],
+  'giratina altered':    ['ghost', 'dragon'],
+  // Lycanroc forms (all Rock)
+  'lycanroc midday':     ['rock'],
+  'lycanroc midnight':   ['rock'],
+  'lycanroc dusk':       ['rock'],
+  // Darmanitan forms
+  'darmanitan standard': ['fire'],
+  'darmanitan zen':      ['fire', 'psychic'],
+  'galarian darmanitan': ['ice'],
+  // Wormadam forms
+  'wormadam plant':      ['bug', 'grass'],
+  'wormadam sandy':      ['bug', 'ground'],
+  'wormadam trash':      ['bug', 'steel'],
+  // Urshifu forms
+  'urshifu single strike': ['fighting', 'dark'],
+  'urshifu rapid strike':  ['fighting', 'water'],
+  // Calyrex forms
+  'calyrex shadow':      ['psychic', 'ghost'],
+  'calyrex ice':         ['psychic', 'ice'],
+  // Other notable forms with type changes
+  'meloetta pirouette':  ['normal', 'fighting'],
+  'aegislash blade':     ['steel', 'ghost'],
+  'aegislash shield':    ['steel', 'ghost'],
+  'eternatus eternamax': ['poison', 'dragon'],
+};
+
+// Build name→types lookup from the loaded Pokémon dataset (base forms only)
+let _pokemonTypeMap = null;
+function getPokemonTypeMap() {
+  if (_pokemonTypeMap && Object.keys(_pokemonTypeMap).length) return _pokemonTypeMap;
+  _pokemonTypeMap = {};
+  if (!allPokemon.length) return _pokemonTypeMap;
+  const nameCol  = headers.includes(COLS.name)  ? COLS.name  : 'pokemon_name';
+  const type1Col = headers.includes(COLS.type1) ? COLS.type1 : 'type1';
+  const type2Col = headers.includes(COLS.type2) ? COLS.type2 : 'type2';
+  allPokemon.forEach(p => {
+    const rawName = (p[nameCol] || '').toLowerCase().trim();
+    const t1 = (p[type1Col] || '').toLowerCase().trim();
+    const t2 = (p[type2Col] || '').toLowerCase().trim();
+    if (!rawName || !t1) return;
+    if (!_pokemonTypeMap[rawName]) _pokemonTypeMap[rawName] = [];
+    if (!_pokemonTypeMap[rawName].includes(t1)) _pokemonTypeMap[rawName].push(t1);
+    if (t2 && !_pokemonTypeMap[rawName].includes(t2)) _pokemonTypeMap[rawName].push(t2);
+  });
+  return _pokemonTypeMap;
+}
+
+// Normalise a DPS sheet name into a lookup key.
+// Strips common prefixes (Mega, Shadow, etc.) and cleans up whitespace.
+// Does NOT strip parenthetical content — we keep it for form matching.
+// e.g. "Mega Blaziken"          -> "blaziken"
+//      "Kyurem (White)"         -> "kyurem white"
+//      "Necrozma (Dawn Wings)"  -> "necrozma dawn wings"
+//      "Shadow Regigigas"       -> "regigigas"
+//      "Galarian Darmanitan"    -> "galarian darmanitan"
+function normaliseDpsName(raw) {
+  return raw.toLowerCase()
+    .replace(/^(mega|shadow) /,  '')   // strip Mega/Shadow prefix only
+    .replace(/[()]/g, '')              // remove parens but keep the content
+    .replace(/[-_/.:]/g, ' ')          // normalise separators used by form names
+    .replace(/[’']/g, '')              // unify apostrophes
+    .replace(/\b(forme|form)\b/g, '')  // remove generic form words
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Normalise to just the base species name (no form info) for database lookup
+function baseSpeciesName(raw) {
+  return raw.toLowerCase()
+    .replace(/^(mega|shadow|alolan|galarian|hisuian|paldean) /, '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .replace(/[-_/.:]/g, ' ')
+    .replace(/[’']/g, '')
+    .replace(/\b(forme|form)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isMega(name) {
+  return /^mega /i.test(name.trim());
+}
+
+// Resolve the types for a DPS entry name.
+// Priority: form overrides > database lookup > unknown (null)
+function resolveTypes(name) {
+  // Hardcoded exact fixes for known STAB edge cases
+  if (name === 'Kyurem (Black)') return ['dragon', 'ice'];
+  if (name === 'Zacian (Crowned Form)') return ['fairy', 'steel'];
+  if (name === 'Necrozma (Dawn Wings)') return ['psychic', 'ghost'];
+
+  const norm = normaliseDpsName(name);
+  const base = baseSpeciesName(name);
+  // Also try reversed-token phrasing for form names:
+  // "necrozma dawn wings" <-> "dawn wings necrozma"
+  const rev = norm.split(' ').reverse().join(' ');
+
+  // 1. Exact form override
+  if (FORM_TYPE_OVERRIDES[norm]) return FORM_TYPE_OVERRIDES[norm];
+  if (FORM_TYPE_OVERRIDES[rev])  return FORM_TYPE_OVERRIDES[rev];
+
+  // 2. Partial form override (e.g. "zacian crowned sword" -> "zacian crowned")
+  const overrideKey = Object.keys(FORM_TYPE_OVERRIDES)
+    .find(k =>
+      norm.includes(k) || k.includes(norm) ||
+      rev.includes(k)  || k.includes(rev)
+    );
+  if (overrideKey) return FORM_TYPE_OVERRIDES[overrideKey];
+
+  // 3. Database exact match on base species name
+  const map = getPokemonTypeMap();
+  if (map[base]) return map[base];
+
+  // 4. Database partial match
+  const dbKey = Object.keys(map).find(k => base.includes(k) || k.includes(base));
+  if (dbKey) return map[dbKey];
+
+  // 5. Unknown form — can't determine
+  return null;
+}
+
+function isStab(entry) {
+  // User-requested hard excludes: these specific entries should never count as STAB
+  // for the chart's STAB filter behavior.
+  if (
+    entry.name === 'Kyurem (Black)' ||
+    entry.name === 'Necrozma (Dawn Wings)'
+  ) {
+    return false;
+  }
+  // Zacian appears in multiple label variants in different sheets/exports.
+  // Treat any Zacian entry as non-STAB for this filter behavior.
+  if (/^zacian\b/i.test(entry.name.trim())) return false;
+
+  const types   = resolveTypes(entry.name);
+  const atkType = entry.type.toLowerCase();
+  if (!types) {
+    // Unknown form/name: fail closed so STAB filter does real filtering.
+    console.log(`STAB unknown: "${entry.name}" -> treating as non-STAB`);
+    return false;
+  }
+  const result = types.includes(atkType);
+  return result;
+}
+
+function applyDpsFilters(entries) {
+  return entries
+    .filter(e => {
+      // Mega filter: when OFF, remove Mega Pokemon
+      if (!dpsFilters.mega && isMega(e.name)) return false;
+      // STAB filter: when ON, show only STAB attackers (remove off-type moves)
+      // e.g. Regigigas using a Bug move is NOT STAB, so it's hidden when STAB is ON
+      if (dpsFilters.stab && !isStab(e))      return false;
+      return true;
+    })
+    .slice(0, 10);
+}
+
+function renderDpsChart(def) {
+  const el = document.getElementById(`dpsChart-${def}`);
+  if (!el) return;
+
+  const raw     = dpsData[def] || [];
+  const entries = applyDpsFilters(raw);
+
+  if (!entries.length) {
+    el.innerHTML = '<p class="mono" style="color:var(--ink-dim);font-size:0.65rem;padding:1.5rem 0">No entries match current filters.</p>';
+    return;
+  }
+
+  const maxDps = entries[0].dps;
+  el.innerHTML = entries.map((e, i) => {
+    const isBug = e.type === 'bug';
+    const pct   = (e.dps / maxDps) * 100;
+    const megaTag = isMega(e.name) ? '<span class="dps-tag">MEGA</span>' : '';
+    return `<div class="dps-row${isBug?' is-bug':''}" data-pct="${pct}" style="opacity:0">
+      <div class="dps-rank">${i+1}</div>
+      <div class="dps-name" title="${e.name}">${e.name}${megaTag}</div>
+      <div class="dps-bar-track">
+        <div class="dps-bar-inner" style="width:0%">
+          <div class="dps-seg-fast"    style="flex:38 0 0%"></div>
+          <div class="dps-seg-charged" style="flex:62 0 0%"></div>
+        </div>
+      </div>
+      <div class="dps-val">${e.dps.toFixed(1)}</div>
+      <div class="dps-move-tip">${e.fastMove} + ${e.chargedMove}</div>
+    </div>`;
+  }).join('');
+}
+
+function buildDpsChart() {
+  ['grass','dark','psychic'].forEach(renderDpsChart);
+  updateDpsVerdictStat();
+
+  // Tab buttons
+  document.querySelectorAll('.dps-tab').forEach(btn => {
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', () => {
+      const target = fresh.dataset.target;
+      document.querySelectorAll('.dps-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.dps-chart').forEach(c => c.classList.remove('active'));
+      fresh.classList.add('active');
+      const chart = document.getElementById(`dpsChart-${target}`);
+      if (chart) { chart.classList.add('active'); animateDpsRows(chart); }
+    });
+  });
+
+  // Filter buttons
+  document.querySelectorAll('.dps-filter').forEach(btn => {
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', () => {
+      const filter = fresh.dataset.filter;
+      dpsFilters[filter] = !dpsFilters[filter];
+      fresh.classList.toggle('active', dpsFilters[filter]);
+
+      // Re-render all tabs, animate the currently visible one
+      ['grass','dark','psychic'].forEach(renderDpsChart);
+      updateDpsVerdictStat();
+      const active = document.querySelector('.dps-chart.active');
+      if (active) animateDpsRows(active);
+    });
+  });
+
+  const n5=document.getElementById('ch5Note');
+  if(n5) n5.textContent='🐛 Bug counters all three — but rarely wins the DPS race';
+
+  // Animate the initially-active tab
+  const active=document.querySelector('.dps-chart.active');
+  if(active) animateDpsRows(active);
+}
+
+function updateDpsVerdictStat() {
+  const allDefs = ['grass','dark','psychic'];
+  const countsByDef = {};
+  const totalBugTop10 = allDefs.reduce((sum, def) => {
+    const top = applyDpsFilters(dpsData[def] || []);
+    const c = top.filter(e => e.type === 'bug').length;
+    countsByDef[def] = c;
+    return sum + c;
+  }, 0);
+  const v4 = document.getElementById('vstat4');
+  if (v4) v4.textContent = `${totalBugTop10} / 30`;
+  const v4Breakdown = document.getElementById('vstat4Breakdown');
+  if (v4Breakdown) {
+    v4Breakdown.innerHTML =
+      `Bug entries in top 10 lists<br/>` +
+      `vs Grass: ${countsByDef.grass || 0}/10 · ` +
+      `vs Dark: ${countsByDef.dark || 0}/10 · ` +
+      `vs Psychic: ${countsByDef.psychic || 0}/10`;
+  }
+}
+
+function animateDpsRows(container) {
+  const rows=Array.from(container.querySelectorAll('.dps-row'));
+  // Reset
+  rows.forEach(row=>{ row.style.transition='none'; row.style.opacity='0';
+    const b=row.querySelector('.dps-bar-inner'); if(b){ b.style.transition='none'; b.style.width='0%'; }
+  });
+  // Force reflow so reset actually applies before we animate
+  container.offsetHeight;
+  rows.forEach((row,i)=>{
+    const bar=row.querySelector('.dps-bar-inner');
+    const pct=parseFloat(row.dataset.pct);
+    setTimeout(()=>{
+      row.style.transition='opacity 0.3s';
+      row.style.opacity='1';
+      if(bar){ bar.style.transition='width 0.45s cubic-bezier(0.16,1,0.3,1)'; bar.style.width=pct+'%'; }
+    },i*80);
+  });
+}
+
+// ── RAIDS LINE CHART ─────────────────────────────────────
+const RAIDS_DATA = {
+  years: [2017,2018,2019,2020,2021,2022,2023,2024,2025],
+  types: {
+    Bug:      [0,0,0,1,4,10,9,18,21],
+    Dark:     [0,0,1,23,33,21,18,20,27],
+    Dragon:   [0,21,22,73,55,33,36,59,64],
+    Electric: [7,2,2,16,53,22,20,27,21],
+    Fairy:    [0,0,0,0,8,20,21,22,34],
+    Fighting: [0,0,13,15,25,20,16,22,49],
+    Fire:     [10,9,4,89,46,21,23,23,34],
+    Flying:   [17,18,8,70,70,34,42,43,40],
+    Ghost:    [0,3,3,24,16,10,10,22,16],
+    Grass:    [0,0,3,29,34,17,13,14,20],
+    Ground:   [2,2,6,5,16,9,14,19,16],
+    Ice:      [3,4,1,32,30,15,14,11,21],
+    Normal:   [0,0,9,37,29,10,12,6,15],
+    Poison:   [0,0,0,33,29,9,8,6,8],
+    Psychic:  [15,64,77,17,40,39,36,42,61],
+    Rock:     [0,4,5,5,7,16,8,13,26],
+    Steel:    [0,3,12,19,19,30,22,35,62],
+    Water:    [4,6,8,24,27,21,20,23,33],
+  }
+};
+
+// Which types are toggled on (default: Bug + Average)
+let raidsActiveTypes = new Set(['Bug', '__avg__']);
+let raidsAnimFrame = null;
+
+function getRaidsAvg() {
+  const years = RAIDS_DATA.years;
+  const types = Object.values(RAIDS_DATA.types);
+  return years.map((_, yi) => {
+    const sum = types.reduce((s, arr) => s + arr[yi], 0);
+    return sum / types.length;
+  });
+}
+
+function buildRaidsChart() {
+  const canvas = document.getElementById('raidsCanvas');
+  if (!canvas) return;
+
+  // Build filter buttons
+  const filtersEl = document.getElementById('raidsTypeFilters');
+  if (filtersEl && !filtersEl.dataset.built) {
+    filtersEl.dataset.built = '1';
+
+    // Average button first
+    const avgBtn = document.createElement('button');
+    avgBtn.className = 'raids-btn active';
+    avgBtn.dataset.type = '__avg__';
+    avgBtn.textContent = 'Average';
+    avgBtn.style.setProperty('--btn-color', 'rgba(226,237,226,0.55)');
+    avgBtn.addEventListener('click', () => toggleRaidsType('__avg__', avgBtn));
+    filtersEl.appendChild(avgBtn);
+
+    // Type buttons
+    Object.keys(RAIDS_DATA.types).forEach(type => {
+      const color = TYPE_COLORS[type.toLowerCase()] || TYPE_COLORS.default;
+      const btn = document.createElement('button');
+      btn.className = 'raids-btn' + (type === 'Bug' ? ' active is-bug' : '');
+      btn.dataset.type = type;
+      btn.textContent = type;
+      btn.style.setProperty('--btn-color', color);
+      btn.addEventListener('click', () => toggleRaidsType(type, btn));
+      filtersEl.appendChild(btn);
+    });
+  }
+
+  drawRaidsChart(canvas, 0);
+
+  // Populate verdict tile 5 — Raid Presence
+  const bugData = RAIDS_DATA.types['Bug'];
+  if (bugData) {
+    const years = RAIDS_DATA.years;
+    const allTypes = Object.values(RAIDS_DATA.types);
+    const avgTotals = years.map((_, i) => {
+      const sum = allTypes.reduce((s, vals) => s + vals[i], 0);
+      return sum / allTypes.length;
+    });
+    const bugTotal = bugData.reduce((s, v) => s + v, 0);
+    const avgTotal = Math.round(avgTotals.reduce((s, v) => s + v, 0));
+    const v5 = document.getElementById('vstat5');
+    if (v5) v5.textContent = `${bugTotal}`;
+    const v5b = document.getElementById('vstat5Breakdown');
+    if (v5b) v5b.innerHTML = `Bug total raid appearances vs ${avgTotal} avg`;
+  }
+}
+
+function toggleRaidsType(type, btn) {
+  if (raidsActiveTypes.has(type)) {
+    // Keep at least 1 active
+    if (raidsActiveTypes.size <= 1) return;
+    raidsActiveTypes.delete(type);
+    btn.classList.remove('active');
+  } else {
+    raidsActiveTypes.add(type);
+    btn.classList.add('active');
+  }
+  const canvas = document.getElementById('raidsCanvas');
+  if (canvas) drawRaidsChart(canvas, 1);
+}
+
+function drawRaidsChart(canvas, animProgress) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = rect.height;
+  const PAD = { top: 28, right: 80, bottom: 48, left: 50 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+
+  const years = RAIDS_DATA.years;
+  const n     = years.length;
+
+  // Gather all active series
+  const series = [];
+  raidsActiveTypes.forEach(type => {
+    if (type === '__avg__') {
+      series.push({ label: 'Average', values: getRaidsAvg(), color: 'rgba(226,237,226,0.55)', dashed: true, isBug: false, isAvg: true });
+    } else if (RAIDS_DATA.types[type]) {
+      const color = TYPE_COLORS[type.toLowerCase()] || TYPE_COLORS.default;
+      series.push({ label: type, values: RAIDS_DATA.types[type], color, dashed: false, isBug: type === 'Bug', isAvg: false });
+    }
+  });
+
+  // Y scale — max of all active series
+  const allVals = series.flatMap(s => s.values);
+  const maxVal  = Math.max(...allVals, 10);
+  const yTick   = maxVal <= 30 ? 5 : maxVal <= 60 ? 10 : maxVal <= 100 ? 20 : 25;
+
+  const xPos = i => PAD.left + (i / (n - 1)) * chartW;
+  const yPos = v => PAD.top + chartH - (v / maxVal) * chartH;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(226,237,226,0.05)';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= maxVal; t += yTick) {
+    const y = yPos(t);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,237,226,0.3)';
+    ctx.font = `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillText(t, PAD.left - 6, y + 3);
+  }
+
+  // Vertical year lines
+  years.forEach((yr, i) => {
+    const x = xPos(i);
+    ctx.strokeStyle = 'rgba(226,237,226,0.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, PAD.top + chartH); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,237,226,0.35)';
+    ctx.font = `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(yr, x, PAD.top + chartH + 18);
+  });
+
+  // Draw lines (non-bug, non-avg first, then avg, then bug on top)
+  const order = [
+    ...series.filter(s => !s.isBug && !s.isAvg),
+    ...series.filter(s => s.isAvg),
+    ...series.filter(s => s.isBug),
+  ];
+
+  order.forEach(s => {
+    const pts = animProgress < 1
+      ? Math.max(2, Math.round(animProgress * (n - 1)) + 1)
+      : n;
+
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i < pts; i++) {
+      const x = xPos(i);
+      const y = yPos(s.values[i]);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth   = s.isBug ? 2.5 : s.isAvg ? 1.5 : 1.5;
+    ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.7 : 0.45;
+    if (s.dashed) ctx.setLineDash([5, 4]);
+    else          ctx.setLineDash([]);
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
+    // Glow for bug
+    if (s.isBug) {
+      ctx.shadowColor = 'rgba(120,200,80,0.5)';
+      ctx.shadowBlur  = 8;
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Dots
+    for (let i = 0; i < pts; i++) {
+      const x = xPos(i);
+      const y = yPos(s.values[i]);
+      ctx.save();
+      ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.65 : 0.4;
+      ctx.beginPath();
+      ctx.arc(x, y, s.isBug ? 4 : s.isAvg ? 3 : 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      if (s.isBug) { ctx.shadowColor = 'rgba(120,200,80,0.7)'; ctx.shadowBlur = 10; }
+      ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  // Labels at right edge (last point)
+  const labeledSeries = order.filter(s => {
+    const lastY = yPos(s.values[n-1]);
+    return lastY > PAD.top && lastY < PAD.top + chartH;
+  });
+
+  // Sort by last value desc to de-collide
+  labeledSeries.sort((a, b) => b.values[n-1] - a.values[n-1]);
+  const labelPositions = [];
+  labeledSeries.forEach(s => {
+    let targetY = yPos(s.values[n-1]);
+    // Nudge if too close to previous
+    for (const py of labelPositions) {
+      if (Math.abs(targetY - py) < 13) targetY = py + 13;
+    }
+    labelPositions.push(targetY);
+    ctx.save();
+    ctx.globalAlpha = s.isBug ? 1 : s.isAvg ? 0.7 : 0.4;
+    ctx.fillStyle   = s.color;
+    ctx.font = s.isBug ? `bold 10px IBM Plex Mono, monospace` : `10px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText(s.label, W - PAD.right + 4, targetY + 3);
+    ctx.restore();
+  });
+}
+
+function animateRaidsChart() {
+  const canvas = document.getElementById('raidsCanvas');
+  if (!canvas) return;
+  const duration = 1200;
+  const start = performance.now();
+  function frame(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    // Ease out cubic
+    const ease = 1 - Math.pow(1 - progress, 3);
+    drawRaidsChart(canvas, ease);
+    if (progress < 1) raidsAnimFrame = requestAnimationFrame(frame);
+  }
+  raidsAnimFrame = requestAnimationFrame(frame);
+}
+
+// Override buildRaidsChart to use animation on first build
+(function() {
+  const _orig = buildRaidsChart;
+  window.buildRaidsChart = function() {
+    _orig();
+    animateRaidsChart();
+    // Re-draw on resize
+    window.addEventListener('resize', () => {
+      const canvas = document.getElementById('raidsCanvas');
+      if (canvas) drawRaidsChart(canvas, 1);
+    }, { passive: true });
+  };
+})();
+
+// ── SCROLL OBSERVER ──────────────────────────────────────
+function setupObserver() {
+  // threshold:0 fires as soon as 1px enters the viewport
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add('is-visible');
+      const id = entry.target.id;
+      const ch = { chapter1:'ch1', chapter2:'ch2', chapter3:'ch3',
+                   chapter4:'ch4', chapter5:'ch5', chapter6:'ch6' }[id];
+      if (!ch) return;
+      seen[ch] = true;
+      tryRender(ch);
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
+
+  ['chapter1','chapter2','chapter3','chapter4','chapter5','chapter6'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) io.observe(el);
+  });
+}
+
+// ── SCROLL SNAPPING LOGIC (removed — smooth free-scroll) ─
+
+// ── INIT ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', ()=>{
+  initHero();
+  initBgParticles();
+  setupObserver();
+  loadData();
+  loadDpsData();
+});
